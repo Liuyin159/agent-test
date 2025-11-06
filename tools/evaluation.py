@@ -250,3 +250,122 @@ def analyze_pattern(pattern_type: str = "all") -> str:
     
     return result.strip()
 
+
+def get_game_statistics() -> str:
+    """获取当前游戏的详细统计信息"""
+    from tools.gomoku_game import get_current_board
+    
+    board = get_current_board()
+    
+    if len(board.move_history) == 0:
+        return "游戏尚未开始，暂无统计数据"
+    
+    stats = []
+    stats.append("📊 棋局统计分析")
+    stats.append("=" * 40)
+    
+    # 基础统计
+    total_moves = len(board.move_history)
+    black_moves = len([m for i, m in enumerate(board.move_history) if i % 2 == 0])
+    white_moves = total_moves - black_moves
+    
+    stats.append(f"总走子数: {total_moves}")
+    stats.append(f"黑棋走子: {black_moves} ({black_moves/total_moves*100:.1f}%)")
+    stats.append(f"白棋走子: {white_moves} ({white_moves/total_moves*100:.1f}%)")
+    
+    # 走子分布分析
+    stats.append("\n🎯 走子分布分析")
+    center = board.size // 2
+    regions = {
+        "中心区域(3x3)": 0,
+        "内圈区域(5x5)": 0,  
+        "外圈区域": 0,
+    }
+    
+    for move in board.move_history:
+        row, col = move
+        distance = max(abs(row - center), abs(col - center))
+        if distance <= 1:
+            regions["中心区域(3x3)"] += 1
+        elif distance <= 2:
+            regions["内圈区域(5x5)"] += 1
+        else:
+            regions["外圈区域"] += 1
+    
+    for region, count in regions.items():
+        percentage = count / total_moves * 100
+        stats.append(f"  {region}: {count}手 ({percentage:.1f}%)")
+    
+    # 时间线分析
+    stats.append("\n⏰ 游戏阶段分析")
+    if total_moves >= 20:
+        opening_moves = min(8, total_moves)
+        midgame_moves = min(12, total_moves - opening_moves)
+        endgame_moves = total_moves - opening_moves - midgame_moves
+        
+        stats.append(f"  开局阶段: 前{opening_moves}手")
+        stats.append(f"  中局阶段: 第{opening_moves+1}-{opening_moves+midgame_moves}手")
+        if endgame_moves > 0:
+            stats.append(f"  残局阶段: 最后{endgame_moves}手")
+    else:
+        stats.append("  游戏尚处于早期阶段")
+    
+    # 热点区域分析
+    stats.append("\n🔥 热点区域分析")
+    hot_spots = _analyze_hot_spots(board)
+    if hot_spots:
+        for i, (pos, count) in enumerate(hot_spots[:3], 1):
+            stats.append(f"  热点{i}: {pos} (相关走子: {count}次)")
+    
+    # 胜负关键点分析
+    stats.append("\n🎯 胜负关键点")
+    if total_moves >= 5:
+        last_5_moves = board.move_history[-5:]
+        stats.append(f"  最后5手: {last_5_moves}")
+    
+    # 当前局面评估
+    stats.append("\n📈 当前局面简评")
+    if total_moves < 5:
+        stats.append("  🟡 开局阶段 - 争夺中心控制权")
+    elif total_moves < 15:
+        stats.append("  🟢 中局前期 - 发展阵型，寻找机会")
+    elif total_moves < 25:
+        stats.append("  🟠 中局后期 - 激烈对抗，寻找突破口")
+    else:
+        stats.append("  🔴 残局阶段 - 精确计算，决胜时刻")
+    
+    # 游戏持续时间估算
+    stats.append("\n⏱️ 游戏时长估算")
+    if total_moves <= 10:
+        stats.append("  预计游戏时长: 5-10分钟")
+    elif total_moves <= 20:
+        stats.append("  预计游戏时长: 10-20分钟") 
+    else:
+        stats.append("  预计游戏时长: 20-30分钟")
+    
+    return "\n".join(stats)
+
+def _analyze_hot_spots(board) -> List[Tuple[Tuple[int, int], int]]:
+    """分析棋盘上的热点区域"""
+    from collections import defaultdict
+    
+    hot_spot_count = defaultdict(int)
+    size = board.size
+    
+    # 分析每个棋子周围的热度
+    for move in board.move_history:
+        row, col = move
+        # 统计周围3x3区域的热度
+        for dr in range(-1, 2):
+            for dc in range(-1, 2):
+                nr, nc = row + dr, col + dc
+                if 0 <= nr < size and 0 <= nc < size:
+                    hot_spot_count[(nr, nc)] += 1
+    
+    # 按热度排序，排除已有棋子的位置
+    sorted_spots = []
+    for pos, count in hot_spot_count.items():
+        if board.board[pos[0]][pos[1]] == 0:  # 只考虑空位
+            sorted_spots.append((pos, count))
+    
+    return sorted(sorted_spots, key=lambda x: x[1], reverse=True)

@@ -480,6 +480,35 @@ def demo_play_with_human() -> None:
         round_num += 1
         board = get_current_board()
         
+        
+                # 新增对局统计
+        _print_step(3, "生成对局统计", "📊")
+        print("\n┌─ 对局统计报告 ───────────────────────────┐")
+        try:
+            # 调用统计工具
+            stats_result = agent.invoke({"input": "请调用getGameStatistics工具获取游戏统计信息"})
+            stats_output = stats_result.get("output", "")
+            
+            # 解析并显示统计信息
+            if "intermediate_steps" in stats_result:
+                for action, observation in stats_result["intermediate_steps"]:
+                    if "getGameStatistics" in str(getattr(action, "tool", "")):
+                        stats_text = str(observation)
+                        # 格式化显示统计信息
+                        for line in stats_text.split('\n'):
+                            print(f"│ {line:<38} │")
+                        break
+            else:
+                # 直接显示输出
+                for line in stats_output.split('\n'):
+                    if line.strip():
+                        print(f"│ {line:<38} │")
+                        
+        except Exception as exc:
+            print(f"│ 统计生成失败: {str(exc)[:35]:<38} │")
+        
+        print("└───────────────────────────────────────────┘")
+        
         # 检查是否已结束
         piece_count = len(board.move_history)
         if piece_count > 0:
@@ -499,6 +528,34 @@ def demo_play_with_human() -> None:
                 print(f"║         {symbol} {winner_name}({winner})获胜！                 ║")
                 print("╚══════════════════════════════════════╝")
                 _print_mini_board_from_matrix(board.board, center=last_move, view_size=10)
+                
+                # 新增对局统计
+                _print_step(3, "生成对局统计", "📊")
+                print("\n┌─ 对局统计报告 ───────────────────────────┐")
+                try:
+                    # 调用统计工具
+                    stats_result = agent.invoke({"input": "请调用getGameStatistics工具获取游戏统计信息"})
+                    stats_output = stats_result.get("output", "")
+                    
+                    # 解析并显示统计信息
+                    if "intermediate_steps" in stats_result:
+                        for action, observation in stats_result["intermediate_steps"]:
+                            if "getGameStatistics" in str(getattr(action, "tool", "")):
+                                stats_text = str(observation)
+                                # 格式化显示统计信息
+                                for line in stats_text.split('\n'):
+                                    print(f"│ {line:<38} │")
+                                break
+                    else:
+                        # 直接显示输出
+                        for line in stats_output.split('\n'):
+                            if line.strip():
+                                print(f"│ {line:<38} │")
+                                
+                except Exception as exc:
+                    print(f"│ 统计生成失败: {str(exc)[:35]:<38} │")
+                
+                print("└───────────────────────────────────────────┘")
                 break
         
         # 检查当前玩家

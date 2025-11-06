@@ -28,6 +28,7 @@ from tools import (
     evaluate_position,
     suggest_moves,
     analyze_pattern,
+    get_game_statistics,
 )
 
 
@@ -185,6 +186,15 @@ def build_tools() -> List[Tool]:
             ),
             func=lambda _: reset_game(),
         ),
+        Tool(
+            name="getGameStatistics",
+            description=(
+                "获取当前游戏的详细统计信息。"
+                "输入: 任意文本（通常为 'stats' 或 'statistics'）"
+                "返回: 游戏统计数据，包括走子分布、时间线分析、热点区域等"
+            ),
+            func=lambda _: get_game_statistics(),
+        )
     ]
 
 

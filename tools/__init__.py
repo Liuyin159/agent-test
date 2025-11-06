@@ -15,6 +15,7 @@ from .evaluation import (
     evaluate_position,
     suggest_moves,
     analyze_pattern,
+    get_game_statistics,
 )
 
 __all__ = [
@@ -30,5 +31,6 @@ __all__ = [
     "evaluate_position",
     "suggest_moves",
     "analyze_pattern",
+    "get_game_statistics",
 ]
 
