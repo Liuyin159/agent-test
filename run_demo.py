@@ -630,7 +630,7 @@ def main() -> None:
         "--mode",
         type=str,
         choices=["auto", "human"],
-        default="auto",
+        default="human",
         help="演示模式: auto=AI自主下棋, human=AI与人类对局",
     )
     
