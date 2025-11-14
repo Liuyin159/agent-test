@@ -4,13 +4,11 @@
 """
 
 from __future__ import annotations
-
 from typing import List
-
 from langchain.tools import Tool
 from langchain_core.prompts import PromptTemplate
-from langchain_openai import ChatOpenAI
 from langchain_core.caches import BaseCache  # noqa: F401
+from langchain_openai import ChatOpenAI
 import httpx
 from langchain.agents import create_react_agent, AgentExecutor
 
@@ -28,32 +26,42 @@ from tools import (
     evaluate_position,
     suggest_moves,
     analyze_pattern,
-    get_game_statistics,
 )
-
 
 def _parse_and_make_move(pos_str: str) -> str:
     """解析位置字符串并执行走子"""
     try:
-        # 支持多种格式: "7,7", "7 7", "row=7,col=7" 等
-        pos_str = pos_str.strip()
-        if ',' in pos_str:
-            parts = pos_str.split(',')
+        pos_str = pos_str.strip().lower()
+        
+        # 处理 "row=7,col=7" 格式
+        if 'row=' in pos_str and 'col=' in pos_str:
+            import re
+            row_match = re.search(r'row=(\d+)', pos_str)
+            col_match = re.search(r'col=(\d+)', pos_str)
+            if row_match and col_match:
+                row = int(row_match.group(1))
+                col = int(col_match.group(1))
+            else:
+                return "错误：格式应为 'row=7,col=7'"
         else:
-            parts = pos_str.split()
+            # 原有逻辑
+            if ',' in pos_str:
+                parts = pos_str.split(',')
+            else:
+                parts = pos_str.split()
+                
+            if len(parts) < 2:
+                return "错误：需要提供行和列坐标，格式为 'row,col'，例如 '7,7'"
+                
+            row = int(parts[0].strip())
+            col = int(parts[1].strip())
             
-        if len(parts) < 2:
-            return "错误：需要提供行和列坐标，格式为 'row,col'，例如 '7,7'"
-            
-        row = int(parts[0].strip())
-        col = int(parts[1].strip())
         return make_move(row, col)
     except ValueError as e:
         return f"错误：坐标格式无效，请使用 'row,col' 格式，例如 '7,7'。错误: {e}"
     except Exception as e:
         return f"走子失败: {e}"
-
-
+    
 def _parse_download_args(args: str) -> str:
     """解析下载参数"""
     try:
@@ -81,7 +89,112 @@ def _parse_download_args(args: str) -> str:
         return f"下载失败: {e}"
 
 
-def build_tools() -> List[Tool]:
+def start_human_vs_ai(difficulty: str = "intermediate", ai_color: str = "white") -> str:
+    """开始人类与AI对战
+    
+    Args:
+        difficulty: AI难度 (beginner, intermediate, advance, expert)
+        ai_color: AI执棋颜色 (black/white)
+        
+    Returns:
+        对战开始信息
+    """
+    from ai_system import get_human_vs_ai
+    from tools.gomoku_game import init_game
+    
+    # 初始化游戏
+    init_game(15)
+    
+    human_vs_ai = get_human_vs_ai()
+    
+    # 设置难度
+    result = human_vs_ai.set_difficulty(difficulty)
+    result += "\n" + human_vs_ai.set_ai_color(ai_color)
+    
+    human_color = "黑棋" if human_vs_ai.human_color == 1 else "白棋"
+    ai_color_str = "黑棋" if human_vs_ai.ai_color == 1 else "白棋"
+    
+    result += f"\n\n对战开始！"
+    result += f"\n- 人类执{human_color}"
+    result += f"\n- AI执{ai_color_str} (难度: {difficulty})"
+    result += f"\n- 搜索深度: {human_vs_ai.max_depth}"
+    
+    if human_vs_ai.human_color == 1:
+        result += f"\n\n您执黑棋先手，请开始走子！"
+    else:
+        result += f"\n\nAI执黑棋先手，请等待AI走子..."
+    
+    return result
+
+def ai_make_move() -> str:
+    """让AI执行走子"""
+    from .ai_system import get_human_vs_ai
+    from tools.gomoku_game import get_current_board, Player, make_move
+    
+    human_vs_ai = get_human_vs_ai()
+    board = get_current_board()
+    
+    if board.game_over:
+        return "游戏已结束，无法走子"
+    
+    # 检查是否是AI的回合
+    current_player_value = 1 if board.current_player == Player.BLACK else 2
+    if not human_vs_ai.is_ai_turn(current_player_value):
+        human_color = "黑棋" if human_vs_ai.human_color == 1 else "白棋"
+        return f"现在轮到人类({human_color})走子，不是AI的回合"
+    
+    # 将棋盘转换为AI可用的格式
+    ai_board = []
+    for i in range(board.size):
+        row = []
+        for j in range(board.size):
+            if board.board[i][j] == Player.BLACK:
+                row.append(1)
+            elif board.board[i][j] == Player.WHITE:
+                row.append(2)
+            else:
+                row.append(0)
+        ai_board.append(row)
+    
+    # 获取AI走法
+    move = human_vs_ai.get_ai_move(ai_board)
+    
+    # 执行走子
+    result = make_move(move[0], move[1])
+    
+    # 添加AI信息
+    difficulty = human_vs_ai.current_difficulty.value
+    result = f"AI({difficulty})走子: {result}"
+    
+    return result
+
+def get_ai_difficulty_info() -> str:
+    """获取当前AI难度信息"""
+    from .ai_system import get_human_vs_ai
+    
+    human_vs_ai = get_human_vs_ai()
+    
+    human_color = "黑棋" if human_vs_ai.human_color == 1 else "白棋"
+    ai_color = "黑棋" if human_vs_ai.ai_color == 1 else "白棋"
+    
+    info = f"当前人类对战AI设置:\n"
+    info += f"- AI难度: {human_vs_ai.current_difficulty.value}\n"
+    info += f"- 搜索深度: {human_vs_ai.max_depth}\n"
+    info += f"- 人类执{human_color}\n"
+    info += f"- AI执{ai_color}\n"
+    
+    from tools.gomoku_game import get_current_board, Player
+    board = get_current_board()
+    if not board.game_over:
+        current_player_value = 1 if board.current_player == Player.BLACK else 2
+        if human_vs_ai.is_ai_turn(current_player_value):
+            info += f"- 当前回合: AI"
+        else:
+            info += f"- 当前回合: 人类"
+    
+    return info
+
+def bulid_tools()->List[Tool]:
     """构建五子棋Agent的工具集"""
     return [
         Tool(
@@ -187,14 +300,35 @@ def build_tools() -> List[Tool]:
             func=lambda _: reset_game(),
         ),
         Tool(
-            name="getGameStatistics",
+            name="startHumanVsAI",
             description=(
-                "获取当前游戏的详细统计信息。"
-                "输入: 任意文本（通常为 'stats' 或 'statistics'）"
-                "返回: 游戏统计数据，包括走子分布、时间线分析、热点区域等"
+                "开始人类与AI对战。"
+                "输入: 难度和AI颜色，格式为 'difficulty,ai_color' 或 'difficulty'"
+                "示例: 'expert,black' 或 'intermediate'"
+                "难度: beginner, intermediate, advance, expert"
+                "AI颜色: black(先手), white(后手)，默认white"
+                "返回: 对战开始信息和设置"
             ),
-            func=lambda _: get_game_statistics(),
-        )
+            func=lambda args: start_human_vs_ai(*args.split(',')) if ',' in args else start_human_vs_ai(args),
+        ),
+        Tool(
+            name="aiMakeMove",
+            description=(
+                "让AI执行走子（在AI的回合调用）。"
+                "输入: 任意文本（通常为 'move' 或 'go'）"
+                "返回: AI走子结果和位置信息"
+            ),
+            func=lambda _: ai_make_move(),
+        ),
+        Tool(
+            name="getAIDifficultyInfo", 
+            description=(
+                "获取当前AI难度设置信息。"
+                "输入: 任意文本"
+                "返回: AI难度、执棋颜色、当前回合等信息"
+            ),
+            func=lambda _: get_ai_difficulty_info(),
+        ),
     ]
 
 
@@ -219,7 +353,7 @@ def build_agent() -> AgentExecutor:
         http_client=http_client,
     )
 
-    tools = build_tools()
+    tools = bulid_tools()
 
     # 使用标准的 ReAct prompt，必须使用英文关键词以确保 LangChain 正确解析
     prompt = PromptTemplate.from_template(
@@ -271,22 +405,22 @@ Question: {input}
 Thought: {agent_scratchpad}
         """.strip()
     )
-
-    agent = create_react_agent(llm=llm, tools=tools, prompt=prompt)
     
+    agent = create_react_agent(llm=llm,tools=tools,prompt=prompt)
+
     # 自定义解析错误处理函数
-    def handle_parsing_error(error: Exception) -> str:
+    def handle_parsing_error(error:Exception)->str:
         """处理解析错误，返回友好的错误信息"""
-        return f"解析错误，请严格按照格式输出。错误: {str(error)[:100]}"
+        return f"解析错误，请严格按照格式输出。错误：{str(error)[:100]}"
     
     executor = AgentExecutor(
         agent=agent,
         tools=tools,
-        verbose=False,  # 关闭详细输出，减少噪音
-        max_iterations=50,  # 增加迭代次数，确保对局能完成（最多可能需要50步才能分出胜负）
-        handle_parsing_errors=handle_parsing_error,  # 使用自定义错误处理
-        return_intermediate_steps=True,  # 返回中间步骤以便调试
-        max_execution_time=600,  # 设置最大执行时间10分钟
-        early_stopping_method="force",  # 强制停止方法
+        verbose=False,
+        max_iterations=50,
+        handle_parsing_errors=handle_parsing_error,
+        return_intermediate_steps=True,
+        max_execution_time=600,
+        early_stopping_method="force"
     )
     return executor

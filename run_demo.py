@@ -8,7 +8,11 @@ from __future__ import annotations
 from pathlib import Path
 import sys
 import os
+from tkinter import NO
+from turtle import color
 from typing import List, Tuple, Union
+
+from torch import le
 
 # 确保脚本可直接运行：把当前目录加入 sys.path
 _CUR_DIR = Path(__file__).resolve().parent
@@ -24,38 +28,38 @@ except Exception:
     pass
 
 from agent_builder import build_agent
-
+from tools.gomoku_game import get_current_board, Player
+from ai_system import AIDifficulty
 
 # ===================== 胜负判定（纯函数） =====================
-
 def _cell_value(cell: Union[int, object]) -> int:
     """支持 int 或带 .value 的枚举（如 Player.BLACK.value==1, Player.WHITE.value==2）"""
-    return cell if isinstance(cell, int) else getattr(cell, "value", 0)
+    if isinstance(cell, int):
+        return cell
+    else:
+        # 如果是枚举对象，获取其 value 属性
+        return getattr(cell, "value", 0)
 
-
-def count_in_direction(board_matrix: List[List[Union[int, object]]],
-                       r: int, c: int, dr: int, dc: int, color: int) -> int:
-    """以(r,c)为中心，沿(dr,dc)与反方向统计连续同色数量（含自身）"""
+def count_in_direction(board_matrix:List[List[Union[int,object]]],
+                       r:int,c:int,dr:int,dc:int,color:int)->int:
     rows = len(board_matrix)
     cols = len(board_matrix[0]) if rows > 0 else 0
-    cnt = 1  # 包含自身
-
+    cnt = 1
+    
     # 正向
-    rr, cc = r + dr, c + dc
-    while 0 <= rr < rows and 0 <= cc < cols and _cell_value(board_matrix[rr][cc]) == color:
-        cnt += 1
-        rr += dr
-        cc += dc
-
+    rr,cc = r+dr,c+dc
+    while 0<=rr<rows and 0<=cc<cols and _cell_value(board_matrix[rr][cc]) == color:
+        cnt+=1
+        rr+=dr
+        cc+=dc
+    
     # 反向
-    rr, cc = r - dr, c - dc
-    while 0 <= rr < rows and 0 <= cc < cols and _cell_value(board_matrix[rr][cc]) == color:
+    rr,cc = r-dr,c-dc
+    while 0 <= rr < rows and 0<= cc < cols and _cell_value(board_matrix[rr][cc]) == color:
         cnt += 1
-        rr -= dr
-        cc -= dc
-
+        rr-= dr
+        cc-=dc
     return cnt
-
 
 def has_five_in_a_row(board_matrix: List[List[Union[int, object]]],
                       last_move: Tuple[int, int],
@@ -69,36 +73,34 @@ def has_five_in_a_row(board_matrix: List[List[Union[int, object]]],
     返回：(是否胜利, 获胜颜色值 1=黑,2=白,0=无)
     """
     if not last_move:
-        return (False, 0)
-
-    r, c = last_move
+        return (False,0)
+    
+    r,c = last_move
     if r is None or c is None:
-        return (False, 0)
-
-    if not (0 <= r < len(board_matrix) and 0 <= c < len(board_matrix[0])):
-        return (False, 0)
+        return (False,0)
+    
+    if not (0<=r<len(board_matrix) and 0 <= c < len(board_matrix[0])):
+        return (False,0)
 
     color = _cell_value(board_matrix[r][c])
     if color == 0:
-        return (False, 0)
-
-    directions = [(0, 1), (1, 0), (1, 1), (1, -1)]
-    for dr, dc in directions:
-        cnt = count_in_direction(board_matrix, r, c, dr, dc, color)
+        return (False,0)
+    
+    directions = [(0,1),(1,0),(1,1),(1,-1)]
+    for dr,dc in directions:
+        cnt = count_in_direction(board_matrix,r,c,dr,dc,color)
         if exact_five:
             if cnt == 5:
-                return (True, color)
-            # 若黑禁手长连：长连（>5）不判胜
-            if cnt > 5 and color == 1 and forbid_black_overline:
+                return (True,color)
+            if cnt >5 and color == 1 and forbid_black_overline:
                 continue
         else:
-            if cnt >= 5:
-                # 自由五子允许长连；如需禁黑长连：
+            if cnt >=5:
                 if cnt > 5 and color == 1 and forbid_black_overline:
                     continue
-                return (True, color)
-
-    return (False, 0)
+                return (True,color)
+    
+    return (False,0)
 
 
 # ===================== 打印与辅助 =====================
@@ -221,7 +223,7 @@ def _print_move_summary(steps: list) -> None:
             print(f"│ {i:2d}. {symbol} {pos:<30} │")
         print("└───────────────────────────────────────────┘")
 
-
+    
 # ===================== 演示：AI 自主下棋 =====================
 
 def demo_autonomous_game() -> None:
@@ -233,14 +235,13 @@ def demo_autonomous_game() -> None:
     # 任务1: 初始化游戏
     _print_step(1, "初始化游戏", "⚙")
     task1 = "请调用 initGame 工具初始化一个15x15的五子棋游戏。完成初始化后，直接给出最终答案，说明游戏已初始化。"
-    
     try:
         result1 = agent.invoke({"input": task1})
         _print_step(1, "初始化完成", "✓")
     except Exception as exc:
         _print_step(1, f"初始化失败: {exc}", "✗")
         return
-
+    
     # 任务2: 下载数据集（可选，如果已存在则跳过）
     dataset_path = Path(__file__).resolve().parent / "output" / "gomoku_dataset.json"
 
@@ -255,7 +256,7 @@ def demo_autonomous_game() -> None:
             _print_step(2, "数据集已创建", "✓")
         except Exception as exc:
             _print_step(2, "数据集创建失败，继续", "…")
-
+            
     # 任务3: AI自主下棋（完整对局）
     _print_step(3, "AI自主对局", "⚙")
     print("\n┌───────────────────────────────────────────┐")
@@ -301,7 +302,7 @@ def demo_autonomous_game() -> None:
         "- 必须持续下棋直到真正分出胜负（形成连续5颗同色棋子），不能提前停止\n"
         "- 双方既要进攻也要防守，阻止对方形成五连"
     )
-    
+
     try:
         # 实时显示执行过程
         print("┌─ 对局进行中 ──────────────────────────────┐")
@@ -362,13 +363,12 @@ def demo_autonomous_game() -> None:
                     if "makeMove" in str(action_tool) or ("落子成功" in obs_str and "位置" in obs_str):
                         symbol, pos = _extract_move_info_from_observation(obs_str)
                         if symbol and pos:
-                            board_after = get_current_board()
-                            if len(board_after.move_history) > current_piece_count:
-                                new_moves += 1
-                                move_num = len(board_after.move_history)
-                                player = "黑棋" if symbol == "●" else "白棋"
-                                print(f"│ 第{move_num:2d}手: {symbol} {player} {pos:<25} │")
-                                round_has_output = True
+                            displayed_moves += 1
+                            move_num = current_piece_count + displayed_moves  # 正确计算
+                            player = "黑棋" if symbol == "●" else "白棋"
+                            print(f"│ 第{move_num:2d}手: {symbol} {player} {pos:<25} │")
+                            round_has_output = True
+                            new_moves += 1
             
             # 如果有走子输出，关闭边框
             if round_has_output and round_num == 1:
@@ -480,35 +480,6 @@ def demo_play_with_human() -> None:
         round_num += 1
         board = get_current_board()
         
-        
-                # 新增对局统计
-        _print_step(3, "生成对局统计", "📊")
-        print("\n┌─ 对局统计报告 ───────────────────────────┐")
-        try:
-            # 调用统计工具
-            stats_result = agent.invoke({"input": "请调用getGameStatistics工具获取游戏统计信息"})
-            stats_output = stats_result.get("output", "")
-            
-            # 解析并显示统计信息
-            if "intermediate_steps" in stats_result:
-                for action, observation in stats_result["intermediate_steps"]:
-                    if "getGameStatistics" in str(getattr(action, "tool", "")):
-                        stats_text = str(observation)
-                        # 格式化显示统计信息
-                        for line in stats_text.split('\n'):
-                            print(f"│ {line:<38} │")
-                        break
-            else:
-                # 直接显示输出
-                for line in stats_output.split('\n'):
-                    if line.strip():
-                        print(f"│ {line:<38} │")
-                        
-        except Exception as exc:
-            print(f"│ 统计生成失败: {str(exc)[:35]:<38} │")
-        
-        print("└───────────────────────────────────────────┘")
-        
         # 检查是否已结束
         piece_count = len(board.move_history)
         if piece_count > 0:
@@ -528,34 +499,6 @@ def demo_play_with_human() -> None:
                 print(f"║         {symbol} {winner_name}({winner})获胜！                 ║")
                 print("╚══════════════════════════════════════╝")
                 _print_mini_board_from_matrix(board.board, center=last_move, view_size=10)
-                
-                # 新增对局统计
-                _print_step(3, "生成对局统计", "📊")
-                print("\n┌─ 对局统计报告 ───────────────────────────┐")
-                try:
-                    # 调用统计工具
-                    stats_result = agent.invoke({"input": "请调用getGameStatistics工具获取游戏统计信息"})
-                    stats_output = stats_result.get("output", "")
-                    
-                    # 解析并显示统计信息
-                    if "intermediate_steps" in stats_result:
-                        for action, observation in stats_result["intermediate_steps"]:
-                            if "getGameStatistics" in str(getattr(action, "tool", "")):
-                                stats_text = str(observation)
-                                # 格式化显示统计信息
-                                for line in stats_text.split('\n'):
-                                    print(f"│ {line:<38} │")
-                                break
-                    else:
-                        # 直接显示输出
-                        for line in stats_output.split('\n'):
-                            if line.strip():
-                                print(f"│ {line:<38} │")
-                                
-                except Exception as exc:
-                    print(f"│ 统计生成失败: {str(exc)[:35]:<38} │")
-                
-                print("└───────────────────────────────────────────┘")
                 break
         
         # 检查当前玩家
@@ -629,55 +572,223 @@ def demo_play_with_human() -> None:
                 print(f"❌ 输入处理错误: {exc}")
                 round_num -= 1
                 continue
+
+# ===================== 人类与多层次AI对局 =====================
+
+def demo_human_vs_multi_ai() -> None:
+    """演示人类与四个难度级别AI的对战"""
+    agent = build_agent()
+
+    _print_header("五子棋 人类 vs 多层次AI 对战")
+
+    # 显示四个难度选项
+    difficulties = list(AIDifficulty)
+    print("\n请选择AI难度级别:")
+    for i, diff in enumerate(difficulties, 1):
+        depth_map = {
+            AIDifficulty.BEGINNER: "随机走法，偶尔防守 (搜索深度: 0)",
+            AIDifficulty.INTERMEDIATE: "Minimax搜索2步",
+            AIDifficulty.ADVANCE: "Alpha-Beta搜索4步", 
+            AIDifficulty.EXPERT: "增强搜索6步+模式识别"
+        }
+        print(f"  {i}. {diff.value:12} - {depth_map[diff]}")
+    
+    # 选择AI难度
+    try:
+        choice = int(input("\n请选择AI难度 (1-4): ")) - 1
+        ai_diff = difficulties[choice]
+        print(f"✓ 已选择AI难度: {ai_diff.value}")
+    except (ValueError, IndexError):
+        print("⚠ 输入无效，使用默认难度: intermediate")
+        ai_diff = AIDifficulty.INTERMEDIATE
+    
+    # 选择执棋颜色
+    print("\n请选择执棋颜色:")
+    print("  1. 黑棋 (先手)")
+    print("  2. 白棋 (后手)")
+    
+    try:
+        color_choice = int(input("请选择 (1-2): "))
+        human_color = "black" if color_choice == 1 else "white"
+        human_color_str = "黑棋" if human_color == "black" else "白棋"
+        ai_color_str = "白棋" if human_color == "black" else "黑棋"
+        print(f"✓ 人类执{human_color_str}，AI执{ai_color_str}")
+    except (ValueError, IndexError):
+        print("⚠ 输入无效，使用默认: 黑棋先手")
+        human_color = "black"
+        human_color_str = "黑棋"
+        ai_color_str = "白棋"
+
+    # 步骤1: 使用Agent初始化人类对战AI
+    _print_step(1, "初始化人类对战AI", "⚙")
+    
+    if human_color == "black":
+        # 人类执黑棋，AI执白棋
+        init_task = f"请调用 startHumanVsAI 工具，设置难度为 {ai_diff.value}，AI颜色为 white。完成设置后直接给出最终答案。"
+    else:
+        # 人类执白棋，AI执黑棋
+        init_task = f"请调用 startHumanVsAI 工具，设置难度为 {ai_diff.value}，AI颜色为 black。完成设置后直接给出最终答案。"
+    
+    try:
+        result = agent.invoke({"input": init_task})
+        _print_step(1, "对战初始化完成", "✓")
+    except Exception as exc:
+        _print_step(1, f"初始化失败: {exc}", "✗")
+        return
+
+    # 步骤2: 获取AI设置信息
+    _print_step(2, "获取AI设置信息", "⚙")
+    try:
+        info_task = "请调用 getAIDifficultyInfo 工具查看当前AI设置。完成后直接给出最终答案。"
+        result = agent.invoke({"input": info_task})
+        _print_step(2, "AI信息获取完成", "✓")
+    except Exception as exc:
+        _print_step(2, f"信息获取失败: {exc}", "⚠")
+
+    # 对局循环
+    _print_step(3, "开始对局", "⚙")
+    max_moves = 100
+    move_num = 0
+    
+    print(f"\n🎯 对战开始!")
+    print(f"   人类: {human_color_str}")
+    print(f"   AI: {ai_color_str} (难度: {ai_diff.value})")
+    print(f"\n💡 提示: 输入 'help' 获取AI建议，输入 'q' 退出游戏")
+    
+    while move_num < max_moves:
+        board = get_current_board()
         
-        else:  # 白棋（AI）
-            # 显示当前棋盘
-            board = get_current_board()
+        # 检查游戏是否结束
+        if board.game_over:
+            winner = "人类" if (board.winner == Player.BLACK and human_color == "black") or (board.winner == Player.WHITE and human_color == "white") else "AI"
+            _print_step(3, "对局完成", "✓")
+            print(f"\n🎉 游戏结束! {winner}获胜!")
+            print(f"   总步数: {move_num}")
+            
+            # 显示最终棋盘
+            if len(board.move_history) > 0:
+                last_move = board.move_history[-1]
+                _print_mini_board_from_matrix(board.board, center=last_move, view_size=12)
+            break
+        
+        # 检查当前回合
+        from ai_system import get_human_vs_ai
+        human_vs_ai = get_human_vs_ai()
+        current_player_value = 1 if board.current_player == Player.BLACK else 2
+        is_ai_turn = human_vs_ai.is_ai_turn(current_player_value)
+        
+        if is_ai_turn:
+            # AI回合 - 使用aiMakeMove工具
+            current_player = "黑棋" if board.current_player == Player.BLACK else "白棋"
+            print(f"\n┌─ 第{move_num + 1}手: AI({ai_diff.value}) {current_player}思考中 ─┐")
+            
+            try:
+                # 使用Agent调用aiMakeMove工具
+                ai_move_task = "请调用 aiMakeMove 工具让AI执行走子。完成后直接给出最终答案。"
+                result = agent.invoke({"input": ai_move_task})
+                
+                # 检查是否成功走子
+                board_after = get_current_board()
+                if len(board_after.move_history) > len(board.move_history):
+                    last_move = board_after.move_history[-1]
+                    print(f"│ AI({ai_diff.value}) 落子: ({last_move[0]}, {last_move[1]})")
+                    print("└───────────────────────────────────────────┘")
+                    
+                    # 显示棋盘
+                    _print_mini_board_from_matrix(board_after.board, center=last_move, view_size=10)
+                    
+                    move_num += 1
+                else:
+                    print(f"│ ⚠ AI未成功走子")
+                    print("└───────────────────────────────────────────┘")
+                    continue
+                    
+            except Exception as exc:
+                print(f"│ ✗ AI走子失败: {exc}")
+                print("└───────────────────────────────────────────┘")
+                continue
+                
+        else:
+            # 人类回合
+            human_player = "黑棋" if board.current_player == Player.BLACK else "白棋"
+            print(f"\n┌─ 第{move_num + 1}手: 人类 {human_player}走子 ──────────────┐")
+            
+            # 显示棋盘
             if len(board.move_history) > 0:
                 last_move = board.move_history[-1]
                 _print_mini_board_from_matrix(board.board, center=last_move, view_size=10)
+            else:
+                _print_mini_board_from_matrix(board.board, center=(7, 7), view_size=10)
             
-            print(f"\n┌─ 第{round_num}轮：AI(○) 思考中 ────────────────────┐")
-            print("│ 🤖 AI正在分析局面并计算最佳走法...        │")
-            print("└───────────────────────────────────────────┘")
-            
-            task_ai = (
-                "当前轮到白棋（你）。"
-                "请查看棋盘状态，评估局面，获取走法建议，然后走出最佳一步。"
-                "要确保你的走法能够应对对手的威胁，并创造自己的机会。"
-                "完成走子后，直接给出最终答案。"
-            )
-            
-            try:
-                result = agent.invoke({"input": task_ai})
-                output = result.get("output", "")
-                
-                # 提取AI走子信息
-                import re
-                move_match = re.search(r"\((\d+),\s*(\d+)\)", output)
-                
-                board_after = get_current_board()
-                if len(board_after.move_history) > len(board.move_history):
-                    # 成功走子（）
-                    last_move = board_after.move_history[-1]
-                    print(f"✓ AI(○) 已落子: ({last_move[0]}, {last_move[1]})\n")
-                else:
-                    print("⚠ AI未成功走子，请检查\n")
+            # 获取人类输入
+            while True:
+                try:
+                    user_input = input("👉 请输入走子位置 (格式: 行,列 例如: 7,7): ").strip()
                     
-            except Exception as exc:
-                print(f"✗ AI走子失败: {exc}\n")
+                    if user_input.lower() == 'q':
+                        print("游戏退出")
+                        return
+                    
+                    if user_input.lower() == 'help':
+                        # 获取AI建议
+                        help_task = f"请调用 getAIMove 工具，获取难度为 {ai_diff.value} 的建议走法。完成后直接给出最终答案。"
+                        help_result = agent.invoke({"input": help_task})
+                        print(f"💡 AI建议: {help_result.get('output', '')}")
+                        continue
+                    
+                    if ',' in user_input:
+                        parts = user_input.split(',')
+                    else:
+                        parts = user_input.split()
+                    
+                    if len(parts) < 2:
+                        print("❌ 格式错误，请使用 '行,列' 格式")
+                        continue
+                    
+                    row = int(parts[0].strip())
+                    col = int(parts[1].strip())
+                    
+                    if not (0 <= row < 15 and 0 <= col < 15):
+                        print("❌ 坐标超出范围 (0-14)")
+                        continue
+                    
+                    # 使用Agent执行人类走子
+                    move_task = f"请调用 makeMove 工具执行走子，位置为 {row},{col}。完成后直接给出最终答案。"
+                    
+                    try:
+                        move_result = agent.invoke({"input": move_task})
+                        board_after = get_current_board()
+                        
+                        if len(board_after.move_history) > len(board.move_history):
+                            print(f"│ 人类落子: ({row}, {col})")
+                            print("└───────────────────────────────────────────┘")
+                            move_num += 1
+                            break
+                        else:
+                            print(f"❌ 走子失败：位置 ({row}, {col}) 可能已被占用或无效")
+                            
+                    except Exception as exc:
+                        print(f"❌ 走子失败: {exc}")
+                        
+                except ValueError:
+                    print("❌ 请输入数字坐标")
+                except KeyboardInterrupt:
+                    print("\n游戏退出")
+                    return
+                except Exception as exc:
+                    print(f"❌ 错误: {exc}")
     
-    # 如果达到最大轮次限制
-    if round_num >= max_rounds:
-        print(f"\n⚠ 已达到最大轮次限制（{max_rounds}轮）")
+    # 检查是否达到最大步数
+    if not get_current_board().game_over and move_num >= max_moves:
+        print(f"\n⚠ 达到最大步数限制 ({max_moves})，游戏未结束")
+        
+        # 显示最终棋盘状态
         board = get_current_board()
         if len(board.move_history) > 0:
             last_move = board.move_history[-1]
-            _print_mini_board_from_matrix(board.board, center=last_move, view_size=10)
-
+            _print_mini_board_from_matrix(board.board, center=last_move, view_size=12)
 
 # ===================== 主函数入口 =====================
-
 def main() -> None:
     """主函数"""
     import argparse
@@ -686,17 +797,19 @@ def main() -> None:
     parser.add_argument(
         "--mode",
         type=str,
-        choices=["auto", "human"],
-        default="human",
-        help="演示模式: auto=AI自主下棋, human=AI与人类对局",
+        choices=["auto", "human","ai"],
+        default="ai",
+        help="演示模式: auto=AI自主下棋, human=AI与人类对局,ai=多层次AI与人类对局",
     )
     
     args = parser.parse_args()
 
     if args.mode == "auto":
         demo_autonomous_game()
-    else:
+    elif args.mode == "human":
         demo_play_with_human()
+    else:
+        demo_human_vs_multi_ai()
 
 
 if __name__ == "__main__":
